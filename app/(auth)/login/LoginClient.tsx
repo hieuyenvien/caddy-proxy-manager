@@ -74,7 +74,7 @@ export default function LoginClient({ enabledProviders = [] }: LoginClientProps)
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center space-y-1">
-          <CardTitle className="text-2xl font-bold">Caddy Proxy Manager</CardTitle>
+          <CardTitle className="text-2xl font-bold">WAF_MBF_01</CardTitle>
           <CardDescription>
             {enabledProviders.length > 0
               ? "Sign in to your account"

@@ -68,9 +68,9 @@ function NavContent({ pathname, user, onNavigate }: {
       {/* Logo */}
       <div className="px-4 py-5 flex items-center gap-2">
         <div className="h-7 w-7 rounded-md bg-primary flex items-center justify-center shrink-0">
-          <span className="text-primary-foreground font-bold text-xs">C</span>
+          <span className="text-primary-foreground font-bold text-xs">W</span>
         </div>
-        <p className="font-semibold text-sm tracking-tight">Caddy Proxy Manager</p>
+        <p className="font-semibold text-sm tracking-tight">WAF_MBF_01</p>
       </div>
       <Separator />
 
@@ -159,7 +159,7 @@ export default function DashboardLayoutClient({ user, children }: { user: User; 
         <Button variant="ghost" size="icon" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
           <Menu className="h-5 w-5" />
         </Button>
-        <span className="font-semibold text-sm">Caddy Proxy Manager</span>
+        <span className="font-semibold text-sm">WAF_MBF_01</span>
         <div className="flex items-center gap-1">
           <ThemeToggle />
           <Button variant="ghost" size="icon" aria-label="Go to profile" onClick={() => router.push("/profile")}>
