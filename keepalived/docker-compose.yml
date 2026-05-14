@@ -1,0 +1,188 @@
+services:
+  web:
+    container_name: caddy-proxy-manager-web
+    image: ghcr.io/fuomag9/caddy-proxy-manager-web:latest
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+      args:
+        PUID: ${PUID:-10001}
+        PGID: ${PGID:-10001}
+    # QUAN TRỌNG: restart=no — Keepalived notify script kiểm soát
+    # vòng đời container này (start khi MASTER, stop khi BACKUP/FAULT).
+    # Không dùng unless-stopped vì Docker sẽ tự restart sau khi
+    # keepalived_notify stop nó.
+    restart: "no"
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      SESSION_SECRET: ${SESSION_SECRET:?ERROR - SESSION_SECRET is required}
+      CADDY_API_URL: ${CADDY_API_URL:-http://caddy:2019}
+      # BASE_URL PHẢI là VIP — Web UI chạy sau khi VIP đã có trên node này
+      BASE_URL: ${BASE_URL:-http://10.2.159.20:3000}
+      DATABASE_PATH: /app/data/caddy-proxy-manager.db
+      DATABASE_URL: file:/app/data/caddy-proxy-manager.db
+      NEXTAUTH_URL: ${BASE_URL:-http://10.2.159.20:3000}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?ERROR - ADMIN_USERNAME is required}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ERROR - ADMIN_PASSWORD is required}
+      OAUTH_ENABLED: ${OAUTH_ENABLED:-false}
+      OAUTH_PROVIDER_NAME: ${OAUTH_PROVIDER_NAME:-OAuth2}
+      OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID:-}
+      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET:-}
+      OAUTH_ISSUER: ${OAUTH_ISSUER:-}
+      OAUTH_AUTHORIZATION_URL: ${OAUTH_AUTHORIZATION_URL:-}
+      OAUTH_TOKEN_URL: ${OAUTH_TOKEN_URL:-}
+      OAUTH_USERINFO_URL: ${OAUTH_USERINFO_URL:-}
+      OAUTH_ALLOW_AUTO_LINKING: ${OAUTH_ALLOW_AUTO_LINKING:-false}
+      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-cpm}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
+    group_add:
+      - "${CADDY_GID:-10000}"
+    volumes:
+      - caddy-manager-data:/app/data
+      - geoip-data:/usr/share/GeoIP:ro,z
+      - ${CADDY_LOG_DIR:-/home/dockerwaf/caddy-logs}:/logs:ro
+    depends_on:
+      caddy:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+        required: false
+    networks:
+      - caddy-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health',r=>{process.exit(r.statusCode<400?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  caddy:
+    container_name: caddy-proxy-manager-caddy
+    image: ghcr.io/fuomag9/caddy-proxy-manager-caddy:latest
+    build:
+      context: .
+      dockerfile: docker/caddy/Dockerfile
+      args:
+        PUID: ${PUID:-10000}
+        PGID: ${PGID:-10000}
+    # Caddy proxy luôn chạy trên cả 2 node (phục vụ WAF traffic)
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "80:80/udp"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      PRIMARY_DOMAIN: ${PRIMARY_DOMAIN:-caddyproxymanager.com}
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+      - ${CADDY_LOG_DIR:-/home/dockerwaf/caddy-logs}:/logs
+      - geoip-data:/usr/share/GeoIP:ro,z
+    networks:
+      - caddy-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "-O", "/dev/null", "http://localhost:2019/config/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  docker-socket-proxy:
+    container_name: caddy-proxy-manager-docker-proxy
+    image: tecnativa/docker-socket-proxy:latest
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      POST: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      IMAGES: 1
+      SECRETS: 0
+      EXEC: 0
+      SWARM: 0
+      AUTH: 0
+      BUILD: 0
+    volumes:
+      # Thay 1001 bằng UID thực của dockerwaf: id -u dockerwaf
+      - /run/user/1001/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - caddy-network
+
+  l4-port-manager:
+    container_name: caddy-proxy-manager-l4-ports
+    image: ghcr.io/fuomag9/caddy-proxy-manager-l4-port-manager:latest
+    build:
+      context: .
+      dockerfile: docker/l4-port-manager/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATA_DIR: /data
+      COMPOSE_DIR: /compose
+      POLL_INTERVAL: "${L4_PORT_MANAGER_POLL_INTERVAL:-2}"
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+    volumes:
+      - caddy-manager-data:/data
+      - .:/compose:ro
+    depends_on:
+      caddy:
+        condition: service_healthy
+      docker-socket-proxy:
+        condition: service_started
+    networks:
+      - caddy-network
+
+  clickhouse:
+    container_name: caddy-proxy-manager-clickhouse
+    image: clickhouse/clickhouse-server:latest-alpine
+    profiles: [clickhouse]
+    restart: always
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-cpm}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?ERROR - CLICKHOUSE_PASSWORD is required}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    networks:
+      - caddy-network
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user ${CLICKHOUSE_USER:-cpm} --password ${CLICKHOUSE_PASSWORD:?ERROR - CLICKHOUSE_PASSWORD is required} --query 'SELECT 1'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+  geoipupdate:
+    container_name: geoipupdate-${HOSTNAME}
+    image: ghcr.io/maxmind/geoipupdate
+    profiles: [geoipupdate]
+    restart: always
+    environment:
+      - GEOIPUPDATE_ACCOUNT_ID=${GEOIPUPDATE_ACCOUNT_ID:-}
+      - GEOIPUPDATE_LICENSE_KEY=${GEOIPUPDATE_LICENSE_KEY:-}
+      - 'GEOIPUPDATE_EDITION_IDS=GeoLite2-ASN GeoLite2-City GeoLite2-Country'
+      - GEOIPUPDATE_FREQUENCY=72
+    volumes:
+      - geoip-data:/usr/share/GeoIP:z
+    networks:
+      - caddy-network
+
+networks:
+  caddy-network:
+    driver: bridge
+
+volumes:
+  caddy-manager-data:
+  caddy-data:
+  caddy-config:
+  geoip-data:
+  clickhouse-data:
