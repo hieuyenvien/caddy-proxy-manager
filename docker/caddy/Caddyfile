@@ -1,5 +1,6 @@
 {
-	# Bound to 0.0.0.0 within the Docker network so the web container can reach it.
+	# Bound to 0.0.0.0so the web container can reach it via host.docker.internal when
+	# caddy runs with network_mode: host (needed to preserve real client IPs in WAF logs).
 	# Port 2019 must NOT be published to the host in docker-compose.yml.
 	# The origins directive restricts which Host header values are accepted.
 	admin 0.0.0.0:2019 {

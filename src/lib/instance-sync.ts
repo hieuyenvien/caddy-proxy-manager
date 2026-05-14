@@ -282,7 +282,11 @@ export async function buildSyncPayload(): Promise<SyncPayload> {
 
   const sanitizedProxyHosts = proxyRows.map((row) => ({
     ...row,
-    ownerUserId: null
+    ownerUserId: null,
+    // Backward-compat: older slave images require these fields removed in migration 0005
+    responseMode: "proxy",
+    staticStatusCode: null,
+    staticResponseBody: null,
   }));
 
   const sanitizedL4ProxyHosts = l4Rows.map((row) => ({

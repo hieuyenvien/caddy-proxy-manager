@@ -173,10 +173,10 @@ function isProxyHost(value: unknown): value is SyncPayload["data"]["proxyHosts"]
     isBoolean(value.enabled) &&
     isString(value.createdAt) &&
     isString(value.updatedAt) &&
-    isBoolean(value.skipHttpsHostnameValidation) &&
-    isString(value.responseMode) &&
-    isNullableNumber(value.staticStatusCode) &&
-    isNullableString(value.staticResponseBody)
+    isBoolean(value.skipHttpsHostnameValidation) 
+    // isString(value.responseMode) &&
+    // isNullableNumber(value.staticStatusCode) &&
+    // isNullableString(value.staticResponseBody)
   );
 }
 

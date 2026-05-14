@@ -15,6 +15,7 @@ services:
     ports:
       - "3000:3000"
     environment:
+      # TZ: Asia/Ho_Chi_Minh
       # Node environment
       NODE_ENV: production
 
@@ -58,12 +59,27 @@ services:
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-cpm}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
+
+
+      # Instance sync for HA/multi-node deployments (optional)
+      # INSTANCE_MODE: standalone | master | slave
+      INSTANCE_MODE: ${INSTANCE_MODE:-standalone}
+      # INSTANCE_SYNC_TOKEN: ${INSTANCE_SYNC_TOKEN:-}
+      INSTANCE_SLAVES: ${INSTANCE_SLAVES:-}
+      INSTANCE_SYNC_INTERVAL: ${INSTANCE_SYNC_INTERVAL:-0}
+      INSTANCE_SYNC_ALLOW_HTTP: ${INSTANCE_SYNC_ALLOW_HTTP:-false}
+
     group_add:
       - "${CADDY_GID:-10000}"  # caddy's GID — lets the web user read /logs/access.log
     volumes:
+      - /usr/share/zoneinfo:/usr/share/zoneinfo:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
       - caddy-manager-data:/app/data
       - geoip-data:/usr/share/GeoIP:ro,z
-      - caddy-logs:/logs:ro
+      # Đọc log từ bind mount host (cùng path với caddy container)
+      - ${CADDY_LOG_DIR:-/home/dockerwaf/caddy-logs}:/logs:ro
+      # - caddy-logs:/logs:ro
     depends_on:
       caddy:
         condition: service_healthy
@@ -103,12 +119,20 @@ services:
       # Uncomment the line below to expose metrics externally for Grafana/Prometheus
       # - "9090:9090"  # Metrics available at http://localhost:9090/metrics (configure in Settings first)
     environment:
+      TZ: Asia/Ho_Chi_Minh
       # Primary domain for Caddy configuration
       PRIMARY_DOMAIN: ${PRIMARY_DOMAIN:-caddyproxymanager.com}
     volumes:
+      - /usr/share/zoneinfo:/usr/share/zoneinfo:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
       - caddy-data:/data
       - caddy-config:/config
-      - caddy-logs:/logs
+      # Bind mount /logs ra host để lưu access log + WAF attack log
+      # Thư mục host tạo trước: mkdir -p /home/dockerwaf/caddy-logs
+      # Đổi CADDY_LOG_DIR trong .env nếu muốn lưu chỗ khác
+      - ${CADDY_LOG_DIR:-/home/dockerwaf/caddy-logs}:/logs
+      #- caddy-logs:/logs
       - geoip-data:/usr/share/GeoIP:ro,z
     networks:
       - caddy-network
@@ -139,7 +163,7 @@ services:
       AUTH: 0
       BUILD: 0
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /run/user/1001/docker.sock:/var/run/docker.sock:ro
     networks:
       - caddy-network
 
@@ -175,11 +199,15 @@ services:
     profiles: [clickhouse]
     restart: always
     environment:
+      # TZ: Asia/Ho_Chi_Minh
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-cpm}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?ERROR - CLICKHOUSE_PASSWORD is required}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     volumes:
+      - /usr/share/zoneinfo:/usr/share/zoneinfo:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
       - clickhouse-data:/var/lib/clickhouse
     networks:
       - caddy-network
@@ -217,6 +245,7 @@ volumes:
   caddy-manager-data:
   caddy-data:
   caddy-config:
-  caddy-logs:
+  # bo volume nay do dung bind mount
+  # caddy-logs:
   geoip-data:
   clickhouse-data:
